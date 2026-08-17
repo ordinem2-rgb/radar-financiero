@@ -82,10 +82,15 @@ with st.sidebar:
     chart = st.selectbox("Gráfico", ["Velas", "Línea"], index=0)
     st.divider()
     st.header("Supuestos de valoración")
+    st.caption("📋 Estos valores se usan para calcular si el precio actual permite lograr tu retorno objetivo")
     growth = st.slider("Crecimiento EPS anual", -20, 40, 10) / 100
+    st.caption("Crecimiento esperado de ganancias por acción en los próximos 10 años")
     terminal_pe = st.slider("PER final", 5, 50, 20)
+    st.caption("Múltiplo PER que esperas al final (ej: 20x significa 20 veces ganancias)")
     years = st.slider("Horizonte", 3, 15, 10)
+    st.caption("Años que planeas mantener la acción")
     target_return = st.slider("Rentabilidad objetivo", 5, 25, 15) / 100
+    st.caption("Retorno anual que deseas (15% es el estándar de Buffett)")
     run = st.button("Analizar activo", type="primary", use_container_width=True)
 
 if run or "asset" not in st.session_state:
@@ -118,7 +123,7 @@ mc[4].metric("RSI", fmt(prices["RSI"].iloc[-1], 1))
 mc[5].metric("Puntaje", f"{score}/5")
 st.caption(f"Sector: {sector} · Último dato: {prices.index[-1].strftime('%Y-%m-%d')} · Consulta: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-summary, base_analysis, fundamentals, technical, valuation, portfolio, ai = st.tabs(["Resumen", "Análisis BASE", "Fundamental", "Técnico", "Valoración", "Portafolio", "IA"])
+summary, base_analysis, fundamentals, technical, valuation = st.tabs(["Resumen", "Análisis BASE", "Fundamental", "Técnico", "Valoración"])
 
 with summary:
     left, right = st.columns([2, 1])
@@ -174,12 +179,13 @@ with base_analysis:
         trend_emoji = "📈" if full['Technical']['trend'] == "Alcista" else "📉" if full['Technical']['trend'] == "Bajista" else "↔️"
         st.info(f"**Tendencia:** {trend_emoji} {full['Technical']['trend']}\n\n**Acción:** {full['Technical']['recommendation']}")
     with col_tactic_2:
-        if summary['margin_of_safety']:
-            mos_emoji = "✅" if summary['margin_of_safety'] > 0.15 else "⚠️" if summary['margin_of_safety'] > 0 else "❌"
+        if summary.get('margin_of_safety') is not None:
+            mos = summary.get('margin_of_safety', 0)
+            mos_emoji = "✅" if mos > 0.15 else "⚠️" if mos > 0 else "❌"
             st.write(f"{mos_emoji} **Margen de Seguridad**")
-            st.write(f"{summary['margin_of_safety']:.0%}")
+            st.write(f"{mos:.0%}")
     
-    if summary['target_price_15pct'] and analyzer.current_price:
+    if summary.get('target_price_15pct') and analyzer.current_price:
         st.write(f"**📍 Precio Objetivo para 15% TIR:** ${summary['target_price_15pct']:.2f} (actual: ${analyzer.current_price:.2f})")
     
     # ===== TABS ANÁLISIS PROFUNDO =====
@@ -363,30 +369,5 @@ with valuation:
         st.dataframe(scenario.style.format({"Crecimiento":"{:.2%}","PER final":"{:.1f}","Precio futuro":"${:.2f}","TIR":"{:.2%}"}), use_container_width=True, hide_index=True)
     else: st.warning("No hay EPS positivo disponible para realizar esta proyección.")
 
-with portfolio:
-    st.subheader("Simulador de portafolio")
-    assets_text = st.text_input("Activos separados por comas", f"{symbol}, VOO, BND")
-    weights_text = st.text_input("Pesos separados por comas", "50, 40, 10")
-    if st.button("Calcular portafolio"):
-        try:
-            assets = [x.strip().upper() for x in assets_text.split(",") if x.strip()]
-            weights = [float(x.strip())/100 for x in weights_text.split(",")]
-            if len(assets) != len(weights) or abs(sum(weights)-1) > .001: st.error("Los pesos deben coincidir con los activos y sumar 100%.")
-            else:
-                hist = yf.download(assets, period="5y", auto_adjust=True, progress=False)["Close"]
-                if isinstance(hist,pd.Series): hist=hist.to_frame(assets[0])
-                ret=hist.pct_change().dropna(); p_ret=ret.mul(weights,axis=1).sum(axis=1)
-                c=st.columns(3); c[0].metric("Rendimiento anualizado",f"{p_ret.mean()*252:.2%}"); c[1].metric("Volatilidad anualizada",f"{p_ret.std()*np.sqrt(252):.2%}"); c[2].metric("Máxima caída",f"{((1+p_ret).cumprod()/(1+p_ret).cumprod().cummax()-1).min():.2%}")
-                st.subheader("Crecimiento histórico simulado")
-                st.line_chart((1+p_ret).cumprod())
-                st.subheader("Correlación")
-                st.dataframe(ret.corr().round(2),use_container_width=True)
-        except Exception as e: st.error(f"No se pudo calcular: {e}")
-
-with ai:
-    st.subheader("Analista IA")
-    st.info("En el siguiente paso conectaremos un modelo de IA mediante una clave protegida. La IA recibirá los cálculos, supuestos y riesgos, pero no ejecutará operaciones.")
-    st.json({"Activo":symbol,"Precio":current,"PER":info.get("trailingPE"),"ROE":info.get("returnOnEquity"),"RSI":prices.RSI.iloc[-1],"Puntaje":score,"Supuestos":{"crecimiento":growth,"PER_final":terminal_pe,"años":years}})
-
 st.divider()
-st.caption("Aviso educativo: no constituye recomendación formal de compra o venta. Los datos gratuitos pueden estar retrasados, incompletos o contener errores.")
+st.caption("⚠️ **Aviso Legal:** Este análisis es puramente educativo y analítico. No constituye una recomendación formal de compra o venta de valores. Los datos gratuitos pueden estar retrasados, incompletos o contener errores. Consulte con un asesor financiero calificado antes de invertir.")
