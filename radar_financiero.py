@@ -10,263 +10,202 @@ st.set_page_config(page_title="Radar Financiero Pro", page_icon="📊", layout="
 
 st.markdown("""
 <style>
-.block-container {padding-top: 2rem; padding-bottom: 3rem; max-width: 1500px;}
-[data-testid="stMetric"] {background: #111827; border: 1px solid #263244; padding: 14px; border-radius: 12px;}
-.small-note {color: #94a3b8; font-size: 0.9rem;}
+.block-container {max-width: 1500px; padding-top: 1.5rem;}
+[data-testid="stMetric"] {border: 1px solid #273449; border-radius: 12px; padding: 12px; background: #111827;}
 </style>
 """, unsafe_allow_html=True)
 
 st.title("📊 Radar Financiero Pro")
-st.caption("Dashboard educativo para acciones y ETFs del mercado estadounidense")
+st.caption("Análisis educativo de acciones y ETFs estadounidenses")
 
-@st.cache_data(ttl=900)
-def get_market_data(symbol, period, interval):
+@st.cache_data(ttl=900, show_spinner=False)
+def load_asset(symbol, period, interval):
     ticker = yf.Ticker(symbol)
     prices = ticker.history(period=period, interval=interval, auto_adjust=False)
-    try:
-        info = ticker.info
-    except Exception:
-        info = {}
-    try:
-        income = ticker.income_stmt
-    except Exception:
-        income = pd.DataFrame()
-    try:
-        balance = ticker.balance_sheet
-    except Exception:
-        balance = pd.DataFrame()
-    try:
-        cashflow = ticker.cashflow
-    except Exception:
-        cashflow = pd.DataFrame()
+    try: info = ticker.info
+    except Exception: info = {}
+    try: income = ticker.income_stmt
+    except Exception: income = pd.DataFrame()
+    try: balance = ticker.balance_sheet
+    except Exception: balance = pd.DataFrame()
+    try: cashflow = ticker.cashflow
+    except Exception: cashflow = pd.DataFrame()
     return prices, info, income, balance, cashflow
 
-def number(value, decimals=2):
-    if value is None or not isinstance(value, (int, float, np.integer, np.floating)) or not np.isfinite(value):
-        return "N/D"
-    return f"{value:,.{decimals}f}"
+def valid(v):
+    return isinstance(v, (int, float, np.integer, np.floating)) and np.isfinite(v)
 
-def percent(value, decimals=2):
-    if value is None or not isinstance(value, (int, float, np.integer, np.floating)) or not np.isfinite(value):
-        return "N/D"
-    return f"{value * 100:.{decimals}f}%"
+def fmt(v, decimals=2): return f"{v:,.{decimals}f}" if valid(v) else "N/D"
+def pct(v): return f"{v * 100:.2f}%" if valid(v) else "N/D"
+def money(v): return f"${v:,.0f}" if valid(v) else "N/D"
 
-def calculate_indicators(df):
-    df = df.copy().dropna(subset=["Close"])
-    close = df["Close"]
-    df["MA50"] = close.rolling(50).mean()
-    df["MA100"] = close.rolling(100).mean()
-    df["MA200"] = close.rolling(200).mean()
-    df["EMA20"] = close.ewm(span=20, adjust=False).mean()
-    delta = close.diff()
-    gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
-    loss = -delta.clip(upper=0).ewm(alpha=1 / 14, adjust=False).mean()
+def indicators(df):
+    df = df.dropna(subset=["Close"]).copy()
+    c = df["Close"]
+    for n in [20, 50, 100, 200]: df[f"MA{n}"] = c.rolling(n).mean()
+    delta = c.diff()
+    gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
+    loss = -delta.clip(upper=0).ewm(alpha=1/14, adjust=False).mean()
     rs = gain / loss.replace(0, np.nan)
-    df["RSI14"] = 100 - (100 / (1 + rs))
-    ema12 = close.ewm(span=12, adjust=False).mean()
-    ema26 = close.ewm(span=26, adjust=False).mean()
+    df["RSI"] = 100 - 100 / (1 + rs)
+    ema12, ema26 = c.ewm(span=12, adjust=False).mean(), c.ewm(span=26, adjust=False).mean()
     df["MACD"] = ema12 - ema26
-    df["MACD_signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
-    df["BB_mid"] = close.rolling(20).mean()
-    std = close.rolling(20).std()
-    df["BB_upper"] = df["BB_mid"] + 2 * std
-    df["BB_lower"] = df["BB_mid"] - 2 * std
+    df["MACD_SIGNAL"] = df["MACD"].ewm(span=9, adjust=False).mean()
+    mid, sd = c.rolling(20).mean(), c.rolling(20).std()
+    df["BB_MID"], df["BB_UPPER"], df["BB_LOWER"] = mid, mid + 2*sd, mid - 2*sd
     return df
 
-def valuation_score(info, df):
-    score = 0
-    reasons = []
-    pe = info.get("trailingPE")
-    roe = info.get("returnOnEquity")
-    margin = info.get("profitMargins")
-    debt = info.get("debtToEquity")
-    if isinstance(pe, (int, float)) and 0 < pe < 25:
-        score += 1
-        reasons.append("PER inferior a 25")
-    if isinstance(roe, (int, float)) and roe > 0.15:
-        score += 1
-        reasons.append("ROE superior al 15%")
-    if isinstance(margin, (int, float)) and margin > 0.10:
-        score += 1
-        reasons.append("Margen neto superior al 10%")
-    if isinstance(debt, (int, float)) and debt < 100:
-        score += 1
-        reasons.append("Deuda/patrimonio inferior a 100")
-    price = df["Close"].iloc[-1]
-    ma200 = df["MA200"].iloc[-1]
-    if pd.notna(ma200) and price > ma200:
-        score += 1
-        reasons.append("Precio sobre MA200")
-    return score, reasons
+def base_score(info, prices):
+    points, signals = 0, []
+    pe, roe, margin, debt = info.get("trailingPE"), info.get("returnOnEquity"), info.get("profitMargins"), info.get("debtToEquity")
+    tests = [(valid(pe) and 0 < pe < 25, "PER menor que 25"), (valid(roe) and roe > .15, "ROE mayor que 15%"), (valid(margin) and margin > .10, "Margen neto mayor que 10%"), (valid(debt) and debt < 100, "Deuda/patrimonio menor que 100")]
+    for ok, text in tests:
+        if ok: points += 1; signals.append(text)
+    ma200 = prices["MA200"].iloc[-1]
+    if pd.notna(ma200) and prices["Close"].iloc[-1] > ma200: points += 1; signals.append("Precio sobre MA200")
+    return points, signals
+
+def price_projection(info, current, growth, terminal_pe, years):
+    eps = info.get("trailingEps")
+    if not valid(eps) or eps <= 0: return None
+    future_eps = eps * (1 + growth) ** years
+    future_price = future_eps * terminal_pe
+    annual_return = (future_price / current) ** (1 / years) - 1
+    return eps, future_eps, future_price, annual_return
 
 with st.sidebar:
-    st.header("⚙️ Parámetros")
-    symbol = st.text_input("Símbolo", "AAPL").strip().upper()
-    period = st.selectbox("Histórico", ["6mo", "1y", "3y", "5y", "10y", "max"], index=2)
-    interval = st.selectbox("Velas", ["1d", "1wk", "1mo"], index=0)
-    chart_type = st.radio("Tipo de gráfico", ["Velas", "Línea"], index=0)
+    st.header("Configuración")
+    symbol = st.text_input("Símbolo bursátil", "AAPL").strip().upper()
+    period = st.selectbox("Periodo", ["6mo", "1y", "3y", "5y", "10y", "max"], index=2)
+    interval = st.selectbox("Intervalo", ["1d", "1wk", "1mo"], index=0)
+    chart = st.selectbox("Gráfico", ["Velas", "Línea"], index=0)
     st.divider()
-    st.subheader("Simulación de valoración")
-    growth = st.slider("Crecimiento anual supuesto", -20, 40, 10) / 100
-    terminal_pe = st.slider("PER final supuesto", 5, 50, 20)
+    st.header("Supuestos de valoración")
+    growth = st.slider("Crecimiento EPS anual", -20, 40, 10) / 100
+    terminal_pe = st.slider("PER final", 5, 50, 20)
     years = st.slider("Horizonte", 3, 15, 10)
-    analyze = st.button("🔍 Analizar", type="primary", use_container_width=True)
+    target_return = st.slider("Rentabilidad objetivo", 5, 25, 15) / 100
+    run = st.button("Analizar activo", type="primary", use_container_width=True)
 
-if analyze or "data" not in st.session_state:
-    if not symbol:
-        st.error("Escribe un símbolo bursátil.")
-        st.stop()
+if run or "asset" not in st.session_state:
     try:
-        st.session_state.data = get_market_data(symbol, period, interval)
+        st.session_state.asset = load_asset(symbol, period, interval)
         st.session_state.symbol = symbol
-    except Exception as error:
-        st.error("No fue posible consultar los datos. Comprueba el símbolo e inténtalo de nuevo.")
-        st.caption(str(error))
-        st.stop()
-
-prices, info, income, balance, cashflow = st.session_state.data
+    except Exception as e:
+        st.error("No fue posible descargar el activo. Revisa el símbolo.")
+        st.caption(str(e)); st.stop()
+prices, info, income, balance, cashflow = st.session_state.asset
 symbol = st.session_state.symbol
-if prices.empty:
-    st.error("No se encontraron datos para este símbolo.")
-    st.stop()
-
-prices = calculate_indicators(prices)
+if prices.empty: st.error("No hay datos para este símbolo."); st.stop()
+prices = indicators(prices)
 close = prices["Close"]
-last = float(close.iloc[-1])
-previous = float(close.iloc[-2]) if len(close) > 1 else last
-daily_change = (last / previous - 1) if previous else 0
+current = float(close.iloc[-1])
+previous = float(close.iloc[-2]) if len(close) > 1 else current
+change = current / previous - 1 if previous else 0
 name = info.get("longName") or info.get("shortName") or symbol
-currency = info.get("currency", "USD")
 asset_type = str(info.get("quoteType", "Activo")).upper()
 sector = info.get("sector") or info.get("category") or "N/D"
-score, reasons = valuation_score(info, prices)
+score, signals = base_score(info, prices)
 
 st.subheader(f"{name} · {symbol}")
-cols = st.columns(6)
-cols[0].metric("Precio", f"{currency} {last:,.2f}", f"{daily_change:+.2%}")
-cols[1].metric("Tipo", asset_type)
-cols[2].metric("PER", number(info.get("trailingPE")))
-cols[3].metric("ROE", percent(info.get("returnOnEquity")))
-cols[4].metric("Margen neto", percent(info.get("profitMargins")))
-cols[5].metric("Puntaje inicial", f"{score}/5")
-st.caption(f"Sector/categoría: {sector} · Último dato: {prices.index[-1].strftime('%Y-%m-%d')} · Datos gratuitos, posiblemente retrasados")
+mc = st.columns(6)
+mc[0].metric("Precio", f"${current:,.2f}", f"{change:+.2%}")
+mc[1].metric("Tipo", asset_type)
+mc[2].metric("PER", fmt(info.get("trailingPE")))
+mc[3].metric("ROE", pct(info.get("returnOnEquity")))
+mc[4].metric("RSI", fmt(prices["RSI"].iloc[-1], 1))
+mc[5].metric("Puntaje", f"{score}/5")
+st.caption(f"Sector: {sector} · Último dato: {prices.index[-1].strftime('%Y-%m-%d')} · Consulta: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-summary, fundamental, technical, portfolio, ai = st.tabs(["Resumen", "Fundamental", "Técnico", "Portafolio", "IA"])
+summary, fundamentals, technical, valuation, portfolio, ai = st.tabs(["Resumen", "Fundamental", "Técnico", "Valoración", "Portafolio", "IA"])
 
 with summary:
     left, right = st.columns([2, 1])
     with left:
-        st.subheader("Precio y volumen")
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.72, 0.28])
-        if chart_type == "Velas":
-            fig.add_trace(go.Candlestick(x=prices.index, open=prices["Open"], high=prices["High"], low=prices["Low"], close=prices["Close"], name="Precio"), row=1, col=1)
-        else:
-            fig.add_trace(go.Scatter(x=prices.index, y=close, name="Cierre"), row=1, col=1)
-        fig.add_trace(go.Bar(x=prices.index, y=prices["Volume"], name="Volumen", marker_color="#64748b"), row=2, col=1)
-        fig.update_layout(height=560, margin=dict(l=10, r=10, t=20, b=10), xaxis_rangeslider_visible=False, hovermode="x unified")
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[.75, .25], vertical_spacing=.04)
+        if chart == "Velas": fig.add_trace(go.Candlestick(x=prices.index, open=prices.Open, high=prices.High, low=prices.Low, close=prices.Close, name="Precio"), row=1, col=1)
+        else: fig.add_trace(go.Scatter(x=prices.index, y=close, name="Cierre"), row=1, col=1)
+        fig.add_trace(go.Bar(x=prices.index, y=prices.Volume, name="Volumen"), row=2, col=1)
+        fig.update_layout(height=560, xaxis_rangeslider_visible=False, hovermode="x unified", margin=dict(l=10,r=10,t=20,b=10))
         st.plotly_chart(fig, use_container_width=True)
     with right:
         st.subheader("Lectura rápida")
-        ma200 = prices["MA200"].iloc[-1]
-        rsi = prices["RSI14"].iloc[-1]
-        trend = "Alcista" if pd.notna(ma200) and last > ma200 else "Bajista o insuficiente"
-        rsi_state = "Sobrecompra" if pd.notna(rsi) and rsi > 70 else "Sobreventa" if pd.notna(rsi) and rsi < 30 else "Intermedia"
-        st.info(f"**Tendencia:** {trend}\n\n**RSI:** {number(rsi, 1)} ({rsi_state})")
-        st.markdown("**Señales positivas detectadas:**")
-        if reasons:
-            for reason in reasons:
-                st.write(f"✅ {reason}")
-        else:
-            st.write("No hay suficientes señales positivas bajo estas reglas.")
+        ma200, rsi = prices.MA200.iloc[-1], prices.RSI.iloc[-1]
+        trend = "Alcista" if pd.notna(ma200) and current > ma200 else "Bajista o insuficiente"
+        state = "Sobrecompra" if valid(rsi) and rsi > 70 else "Sobreventa" if valid(rsi) and rsi < 30 else "Zona intermedia"
+        st.info(f"**Tendencia:** {trend}\n\n**RSI:** {fmt(rsi,1)} · {state}")
+        st.write("**Señales calculadas:**")
+        for signal in signals: st.write(f"✅ {signal}")
+        if not signals: st.write("Sin señales positivas bajo estas reglas.")
 
-with fundamental:
-    st.subheader("Métricas fundamentales disponibles")
-    fundamental_data = {
-        "Capitalización": info.get("marketCap"),
-        "Ingresos": info.get("totalRevenue"),
-        "Beneficio neto": info.get("netIncomeToCommon"),
-        "EPS": info.get("trailingEps"),
-        "PER": info.get("trailingPE"),
-        "Precio / ventas": info.get("priceToSalesTrailing12Months"),
-        "ROE": percent(info.get("returnOnEquity")),
-        "ROA": percent(info.get("returnOnAssets")),
-        "Margen neto": percent(info.get("profitMargins")),
-        "Deuda / patrimonio": info.get("debtToEquity"),
-        "Flujo de caja libre": info.get("freeCashflow"),
-        "Rendimiento dividendo": percent(info.get("dividendYield")),
-    }
-    table = pd.DataFrame({"Métrica": list(fundamental_data.keys()), "Valor": [number(v) if not isinstance(v, str) else v for v in fundamental_data.values()]})
-    st.dataframe(table, use_container_width=True, hide_index=True)
+with fundamentals:
+    st.subheader("Métricas disponibles")
+    data = {"Capitalización": money(info.get("marketCap")), "Ingresos": money(info.get("totalRevenue")), "Beneficio neto": money(info.get("netIncomeToCommon")), "EPS": fmt(info.get("trailingEps")), "PER": fmt(info.get("trailingPE")), "P/S": fmt(info.get("priceToSalesTrailing12Months")), "ROE": pct(info.get("returnOnEquity")), "ROA": pct(info.get("returnOnAssets")), "Margen neto": pct(info.get("profitMargins")), "Deuda/patrimonio": fmt(info.get("debtToEquity")), "Flujo de caja libre": money(info.get("freeCashflow")), "Dividendo": pct(info.get("dividendYield"))}
+    st.dataframe(pd.DataFrame({"Métrica": data.keys(), "Valor": data.values()}), use_container_width=True, hide_index=True)
     st.subheader("Método BASE")
-    st.write("**B — Base:** esta versión presenta datos de mercado, pero la ventaja competitiva requiere investigación cualitativa.")
-    st.write("**A — Administración:** revisar crecimiento por acción, recompras, dividendos y asignación histórica del capital.")
-    st.write("**S — Salud:** utilizar ROE, márgenes, deuda, beneficio y flujo de caja como señales iniciales, no como veredicto automático.")
-    st.write("**E — Evaluación:** el puntaje inicial combina reglas visibles y no sustituye una valoración completa.")
+    st.write("**B — Base:** revisar producto, recurrencia, competencia, marca y poder de fijación de precios.")
+    st.write("**A — Administración:** revisar crecimiento por acción, recompras, dividendos y asignación de capital.")
+    st.write("**S — Salud:** interpretar ROE, márgenes, deuda, beneficios y flujo de caja conjuntamente.")
+    st.write("**E — Evaluación:** combinar múltiplos, crecimiento, escenarios y margen de seguridad.")
     if not income.empty:
-        st.subheader("Estados financieros disponibles")
-        st.dataframe(income.head(8), use_container_width=True)
+        st.subheader("Estado de resultados disponible")
+        st.dataframe(income, use_container_width=True)
 
 with technical:
-    st.subheader("Indicadores técnicos")
-    t1, t2, t3 = st.columns(3)
-    t1.metric("MA50", number(prices["MA50"].iloc[-1]))
-    t2.metric("MA100", number(prices["MA100"].iloc[-1]))
-    t3.metric("MA200", number(prices["MA200"].iloc[-1]))
-    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.6, 0.2, 0.2])
-    fig.add_trace(go.Scatter(x=prices.index, y=close, name="Precio"), row=1, col=1)
-    for col, color in [("MA50", "#f59e0b"), ("MA100", "#22c55e"), ("MA200", "#ef4444")]:
-        fig.add_trace(go.Scatter(x=prices.index, y=prices[col], name=col, line=dict(color=color)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=prices.index, y=prices["RSI14"], name="RSI14", line=dict(color="#a855f7")), row=2, col=1)
-    fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
-    fig.add_trace(go.Scatter(x=prices.index, y=prices["MACD"], name="MACD"), row=3, col=1)
-    fig.add_trace(go.Scatter(x=prices.index, y=prices["MACD_signal"], name="Señal MACD"), row=3, col=1)
-    fig.update_layout(height=750, margin=dict(l=10, r=10, t=20, b=10), hovermode="x unified")
-    st.plotly_chart(fig, use_container_width=True)
-    st.caption("Las señales técnicas describen comportamiento histórico y no garantizan resultados futuros.")
+    st.subheader("Tendencia, RSI y MACD")
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[.6,.2,.2], vertical_spacing=.04)
+    fig.add_trace(go.Scatter(x=prices.index,y=close,name="Precio"),row=1,col=1)
+    for col,color in [("MA50","orange"),("MA100","green"),("MA200","red")]: fig.add_trace(go.Scatter(x=prices.index,y=prices[col],name=col,line=dict(color=color)),row=1,col=1)
+    fig.add_trace(go.Scatter(x=prices.index,y=prices.RSI,name="RSI"),row=2,col=1)
+    fig.add_hline(y=70,line_dash="dash",line_color="red",row=2,col=1); fig.add_hline(y=30,line_dash="dash",line_color="green",row=2,col=1)
+    fig.add_trace(go.Scatter(x=prices.index,y=prices.MACD,name="MACD"),row=3,col=1); fig.add_trace(go.Scatter(x=prices.index,y=prices.MACD_SIGNAL,name="Señal"),row=3,col=1)
+    fig.update_layout(height=760,hovermode="x unified",margin=dict(l=10,r=10,t=20,b=10))
+    st.plotly_chart(fig,use_container_width=True)
+    st.caption("Los indicadores técnicos describen el comportamiento histórico; no garantizan resultados futuros.")
+
+with valuation:
+    st.subheader("Proyección transparente")
+    result = price_projection(info, current, growth, terminal_pe, years)
+    if result:
+        eps, future_eps, future_price, annual_return = result
+        c = st.columns(4)
+        c[0].metric("EPS actual", f"${eps:.2f}")
+        c[1].metric(f"EPS año {years}", f"${future_eps:.2f}")
+        c[2].metric(f"Precio año {years}", f"${future_price:.2f}")
+        c[3].metric("TIR simulada", f"{annual_return:.2%}")
+        target_price = future_price / ((1 + target_return) ** years)
+        st.info(f"Con estos supuestos, el precio teórico actual para alcanzar {target_return:.0%} anual sería aproximadamente **${target_price:.2f}**.")
+        st.warning("Esta cifra depende completamente del crecimiento y PER final elegidos. No es un precio objetivo ni una recomendación.")
+        scenario = pd.DataFrame({"Escenario": ["Pesimista", "Base", "Optimista"], "Crecimiento": [growth-.05, growth, growth+.05], "PER final": [max(8, terminal_pe-5), terminal_pe, terminal_pe+5]})
+        scenario["Precio futuro"] = eps * (1 + scenario["Crecimiento"]) ** years * scenario["PER final"]
+        scenario["TIR"] = (scenario["Precio futuro"] / current) ** (1 / years) - 1
+        st.dataframe(scenario.style.format({"Crecimiento":"{:.2%}","PER final":"{:.1f}","Precio futuro":"${:.2f}","TIR":"{:.2%}"}), use_container_width=True, hide_index=True)
+    else: st.warning("No hay EPS positivo disponible para realizar esta proyección.")
 
 with portfolio:
-    st.subheader("Simulador sencillo de portafolio")
-    assets_text = st.text_input("Símbolos separados por comas", f"{symbol}, VOO, BND")
-    weights_text = st.text_input("Pesos (%) separados por comas", "50, 40, 10")
+    st.subheader("Simulador de portafolio")
+    assets_text = st.text_input("Activos separados por comas", f"{symbol}, VOO, BND")
+    weights_text = st.text_input("Pesos separados por comas", "50, 40, 10")
     if st.button("Calcular portafolio"):
-        assets = [x.strip().upper() for x in assets_text.split(",") if x.strip()]
         try:
-            weights = [float(x.strip()) / 100 for x in weights_text.split(",")]
-            if len(assets) != len(weights) or abs(sum(weights) - 1) > 0.001:
-                st.error("Debe haber un peso por activo y la suma debe ser exactamente 100%.")
+            assets = [x.strip().upper() for x in assets_text.split(",") if x.strip()]
+            weights = [float(x.strip())/100 for x in weights_text.split(",")]
+            if len(assets) != len(weights) or abs(sum(weights)-1) > .001: st.error("Los pesos deben coincidir con los activos y sumar 100%.")
             else:
-                data = yf.download(assets, period="5y", auto_adjust=True, progress=False)["Close"]
-                if isinstance(data, pd.Series):
-                    data = data.to_frame(assets[0])
-                returns = data.pct_change().dropna()
-                portfolio_returns = returns.mul(weights, axis=1).sum(axis=1)
-                st.metric("Rendimiento anualizado aproximado", f"{portfolio_returns.mean() * 252:.2%}")
-                st.metric("Volatilidad anualizada", f"{portfolio_returns.std() * np.sqrt(252):.2%}")
-                st.dataframe(returns.corr().round(2), use_container_width=True)
-        except Exception as error:
-            st.error(f"No se pudo calcular el portafolio: {error}")
+                hist = yf.download(assets, period="5y", auto_adjust=True, progress=False)["Close"]
+                if isinstance(hist,pd.Series): hist=hist.to_frame(assets[0])
+                ret=hist.pct_change().dropna(); p_ret=ret.mul(weights,axis=1).sum(axis=1)
+                c=st.columns(3); c[0].metric("Rendimiento anualizado",f"{p_ret.mean()*252:.2%}"); c[1].metric("Volatilidad anualizada",f"{p_ret.std()*np.sqrt(252):.2%}"); c[2].metric("Máxima caída",f"{((1+p_ret).cumprod()/(1+p_ret).cumprod().cummax()-1).min():.2%}")
+                st.subheader("Crecimiento histórico simulado")
+                st.line_chart((1+p_ret).cumprod())
+                st.subheader("Correlación")
+                st.dataframe(ret.corr().round(2),use_container_width=True)
+        except Exception as e: st.error(f"No se pudo calcular: {e}")
 
 with ai:
-    st.subheader("Interpretación por IA")
-    st.info("La capa de IA se conectará en una siguiente etapa. Por ahora mostramos el contexto exacto que recibirá el modelo, separado de los cálculos.")
-    context = {
-        "Activo": symbol,
-        "Tipo": asset_type,
-        "Precio": last,
-        "PER": info.get("trailingPE"),
-        "ROE": info.get("returnOnEquity"),
-        "Margen": info.get("profitMargins"),
-        "RSI": prices["RSI14"].iloc[-1],
-        "Puntaje": score,
-        "Supuesto crecimiento": growth,
-        "PER final": terminal_pe,
-        "Horizonte": years,
-    }
-    st.json(context)
-    st.warning("Una IA puede equivocarse. Su función será explicar datos y supuestos, no emitir órdenes automáticas.")
+    st.subheader("Analista IA")
+    st.info("En el siguiente paso conectaremos un modelo de IA mediante una clave protegida. La IA recibirá los cálculos, supuestos y riesgos, pero no ejecutará operaciones.")
+    st.json({"Activo":symbol,"Precio":current,"PER":info.get("trailingPE"),"ROE":info.get("returnOnEquity"),"RSI":prices.RSI.iloc[-1],"Puntaje":score,"Supuestos":{"crecimiento":growth,"PER_final":terminal_pe,"años":years}})
 
 st.divider()
-st.caption("Aviso educativo: este análisis no constituye una recomendación formal de compra o venta. Los datos gratuitos pueden estar retrasados, incompletos o contener errores.")
-
-
+st.caption("Aviso educativo: no constituye recomendación formal de compra o venta. Los datos gratuitos pueden estar retrasados, incompletos o contener errores.")
