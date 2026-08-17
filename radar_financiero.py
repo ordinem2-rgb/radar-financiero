@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
 from base_engine_v2 import BuffettAnalyzer
+from stock_screener import BuffettScreener
 
 st.set_page_config(page_title="Radar Financiero Pro", page_icon="📊", layout="wide")
 
@@ -123,7 +124,7 @@ mc[4].metric("RSI", fmt(prices["RSI"].iloc[-1], 1))
 mc[5].metric("Puntaje", f"{score}/5")
 st.caption(f"Sector: {sector} · Último dato: {prices.index[-1].strftime('%Y-%m-%d')} · Consulta: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-summary, base_analysis, fundamentals, technical, valuation = st.tabs(["Resumen", "Análisis BASE", "Fundamental", "Técnico", "Valoración"])
+summary, base_analysis, fundamentals, technical, valuation, opportunities = st.tabs(["Resumen", "Análisis BASE", "Fundamental", "Técnico", "Valoración", "Oportunidades"])
 
 with summary:
     left, right = st.columns([2, 1])
@@ -368,6 +369,76 @@ with valuation:
         scenario["TIR"] = (scenario["Precio futuro"] / current) ** (1 / years) - 1
         st.dataframe(scenario.style.format({"Crecimiento":"{:.2%}","PER final":"{:.1f}","Precio futuro":"${:.2f}","TIR":"{:.2%}"}), use_container_width=True, hide_index=True)
     else: st.warning("No hay EPS positivo disponible para realizar esta proyección.")
+
+with opportunities:
+    st.subheader("🎯 Oportunidades de Inversión - Screening Buffett")
+    st.caption("Análisis de acciones que cumplen criterios de calidad: Monopolio de Consumidor, ROE elevado, Deuda baja, Valuación atractiva")
+    
+    # Mensaje de inicio
+    st.info("🔍 Analizando acciones de calidad según la filosofía de Buffett. Esto puede tomar 30-60 segundos...")
+    
+    progress_placeholder = st.empty()
+    results_placeholder = st.empty()
+    
+    try:
+        # Ejecutar screening
+        screener = BuffettScreener()
+        opportunities_list = screener.get_top_opportunities(num=15)
+        
+        if not opportunities_list:
+            st.warning("No se encontraron acciones que cumplan los criterios de calidad en este momento.")
+        else:
+            # Mostrar resultados
+            st.success(f"✅ Se encontraron {len(opportunities_list)} oportunidades de inversión")
+            st.markdown("---")
+            
+            # Tabla de oportunidades
+            st.subheader("Top Oportunidades")
+            
+            for idx, opp in enumerate(opportunities_list[:10], 1):
+                col1, col2, col3, col4 = st.columns([1, 2, 2, 2])
+                
+                with col1:
+                    st.metric(f"#{idx}", opp['symbol'], opp['score'])
+                
+                with col2:
+                    st.write(f"**Sector:** {opp['sector']}")
+                    st.write(f"**Precio:** {opp['price']}")
+                
+                with col3:
+                    st.write(f"**Tipo:** {opp['business_type']}")
+                    st.write(f"**Foso:** {opp['moat']}")
+                
+                with col4:
+                    st.write("**Por qué es recomendable:**")
+                    for reason in opp['reasons']:
+                        st.write(f"  {reason}")
+                
+                st.markdown("---")
+            
+            # Tabla consolidada (opcional)
+            st.subheader("Tabla Resumida")
+            
+            table_data = []
+            for opp in opportunities_list[:10]:
+                table_data.append({
+                    'Símbolo': opp['symbol'],
+                    'Puntaje': opp['score'],
+                    'Precio': opp['price'],
+                    'Sector': opp['sector'],
+                    'Tipo de Negocio': opp['business_type'],
+                    'Foso': opp['moat']
+                })
+            
+            df_opportunities = pd.DataFrame(table_data)
+            st.dataframe(df_opportunities, use_container_width=True, hide_index=True)
+            
+            st.markdown("---")
+            st.caption("💡 **Nota:** Estas son oportunidades identificadas por criterios cuantitativos. Realiza investigación cualitativa adicional, revisa informes anuales y noticias antes de invertir. Consulta con un asesor financiero calificado.")
+    
+    except Exception as e:
+        st.error(f"Error al ejecutar screening: {str(e)}")
+        st.caption("Intenta de nuevo en unos momentos o revisa la conexión a internet.")
 
 st.divider()
 st.caption("⚠️ **Aviso Legal:** Este análisis es puramente educativo y analítico. No constituye una recomendación formal de compra o venta de valores. Los datos gratuitos pueden estar retrasados, incompletos o contener errores. Consulte con un asesor financiero calificado antes de invertir.")
