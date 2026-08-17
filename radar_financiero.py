@@ -5,7 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
-from base_engine import BASEAnalyzer
+from base_engine_v2 import BuffettAnalyzer
 
 st.set_page_config(page_title="Radar Financiero Pro", page_icon="📊", layout="wide")
 
@@ -140,123 +140,184 @@ with summary:
         if not signals: st.write("Sin señales positivas bajo estas reglas.")
 
 with base_analysis:
-    st.subheader("Evaluación Método BASE")
+    st.subheader("📊 Análisis Profesional - Método BASE + Buffettología")
+    st.caption("Evaluación rigurosa siguiendo metodología de Warren Buffett y análisis fundamental profundo")
     
-    # Ejecutar análisis BASE
-    analyzer = BASEAnalyzer(info, income, balance, cashflow, prices)
-    base_result = analyzer.calculate_base_score()
+    # Ejecutar análisis profesional
+    analyzer = BuffettAnalyzer(info, income, balance, cashflow, prices)
+    summary = analyzer.get_executive_summary()
+    full = summary['full_analysis']
     
-    # Puntaje general
-    col1, col2, col3, col4 = st.columns(4)
+    # ===== PUNTAJE GENERAL Y CLASIFICACIÓN =====
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
     with col1:
-        st.metric("Puntaje Total", f"{base_result['total_score']}/{base_result['max_score']}")
-        st.caption(f"{base_result['percentage']:.0f}%")
+        st.metric("🎯 Puntaje Total", f"{summary['overall_score']:.0f}/{summary['max_score']:.0f}")
+        st.caption(f"{summary['percentage']:.0f}%")
     with col2:
-        st.metric("B - Negocio", f"{base_result['B']['score']}/{base_result['B']['max_score']}")
+        business_emoji = "💎" if full['B']['moat_strength'] == "Fuerte" else "⭐" if full['B']['moat_strength'] == "Moderado" else "🔹"
+        st.metric(f"{business_emoji} Tipo de Negocio", full['B']['business_type'])
+        st.caption(f"Foso: {full['B']['moat_strength']}")
     with col3:
-        st.metric("A - Administración", f"{base_result['A']['score']}/{base_result['A']['max_score']}")
+        tir_emoji = "🚀" if summary['tir_projected'] and summary['tir_projected'] > 0.15 else "✅" if summary['tir_projected'] and summary['tir_projected'] > 0.10 else "⚠️"
+        tir_display = f"{summary['tir_projected']:.1%}" if summary['tir_projected'] else "N/D"
+        st.metric(f"{tir_emoji} TIR Proyectada (10 años)", tir_display)
     with col4:
-        st.metric("S - Salud", f"{base_result['S']['score']}/{base_result['S']['max_score']}")
+        price_emoji = "🟢" if full['E']['valuation_level'] == 'Barata' else "🟡" if full['E']['valuation_level'] in ['Justa'] else "🔴"
+        st.metric(f"{price_emoji} Valoración", full['E']['valuation_level'])
     
-    # Detalles por sección
+    # ===== RECOMENDACIÓN TÁCTICA =====
     st.markdown("---")
+    st.subheader("⏰ Recomendación Táctica (Cuándo Comprar)")
     
-    tabs_base = st.tabs(["B - Base del Negocio", "A - Administración", "S - Salud Financiera", "E - Evaluación"])
+    col_tactic_1, col_tactic_2 = st.columns([2, 1])
+    with col_tactic_1:
+        trend_emoji = "📈" if full['Technical']['trend'] == "Alcista" else "📉" if full['Technical']['trend'] == "Bajista" else "↔️"
+        st.info(f"**Tendencia:** {trend_emoji} {full['Technical']['trend']}\n\n**Acción:** {full['Technical']['recommendation']}")
+    with col_tactic_2:
+        if summary['margin_of_safety']:
+            mos_emoji = "✅" if summary['margin_of_safety'] > 0.15 else "⚠️" if summary['margin_of_safety'] > 0 else "❌"
+            st.write(f"{mos_emoji} **Margen de Seguridad**")
+            st.write(f"{summary['margin_of_safety']:.0%}")
     
+    if summary['target_price_15pct'] and analyzer.current_price:
+        st.write(f"**📍 Precio Objetivo para 15% TIR:** ${summary['target_price_15pct']:.2f} (actual: ${analyzer.current_price:.2f})")
+    
+    # ===== TABS ANÁLISIS PROFUNDO =====
+    st.markdown("---")
+    tabs_base = st.tabs(["B - Negocio", "A - Administración", "S - Salud", "E - Valoración", "Resumen"])
+    
+    # TAB B
     with tabs_base[0]:
-        st.write("**Análisis de la base del negocio:**")
-        st.write("Evalúa si el negocio es fácil de entender, tiene marca o ventaja competitiva, márgenes saludables y crecimiento estable.")
+        st.subheader("B — Base del Negocio (Foso Económico)")
+        st.write("¿Posee un **monopolio de consumidor** o es un **commodity**? ¿Tiene ventaja competitiva sostenible?")
         
-        st.write(f"**Puntaje: {base_result['B']['score']}/{base_result['B']['max_score']}**")
+        col_b1, col_b2 = st.columns([1, 2])
+        with col_b1:
+            st.metric("Puntaje", f"{full['B']['score']}/{full['B']['max_score']}")
+            st.write(f"**Clasificación:** {full['B']['business_type']}")
+            st.write(f"**Foso:** {full['B']['moat_strength']}")
+        with col_b2:
+            if full['B']['signals']:
+                st.write("**✅ Fortalezas Encontradas:**")
+                for signal in full['B']['signals']:
+                    st.write(f"  • {signal}")
+            if full['B']['concerns']:
+                st.write("**⚠️ Debilidades Detectadas:**")
+                for concern in full['B']['concerns']:
+                    st.write(f"  • {concern}")
         
-        if base_result['B']['signals']:
-            st.write("**✅ Señales positivas:**")
-            for signal in base_result['B']['signals']:
-                st.write(f"  • {signal}")
-        
-        if base_result['B']['concerns']:
-            st.write("**⚠️ Áreas de preocupación:**")
-            for concern in base_result['B']['concerns']:
-                st.write(f"  • {concern}")
-        
-        st.write("**❓ Preguntas pendientes (requieren revisión cualitativa):**")
-        for question in base_result['B']['questions']:
-            st.write(f"  • {question}")
+        st.write("**❓ Preguntas para Investigación Cualitativa:**")
+        for q in full['B']['questions']:
+            st.write(f"  • {q}")
     
+    # TAB A
     with tabs_base[1]:
-        st.write("**Análisis de administración:**")
-        st.write("Evalúa el crecimiento del EPS, consistencia de ganancias, retorno sobre beneficios retenidos y asignación de capital.")
+        st.subheader("A — Administración (Asignación de Capital)")
+        st.write("¿Genera valor la directiva? ¿Retorno sobre beneficios retenidos? ¿Deuda prudente?")
         
-        st.write(f"**Puntaje: {base_result['A']['score']}/{base_result['A']['max_score']}**")
+        col_a1, col_a2 = st.columns([1, 2])
+        with col_a1:
+            st.metric("Puntaje", f"{full['A']['score']}/{full['A']['max_score']}")
+            st.write(f"**Recompras:** {full['A']['buyback_signal']}")
+            st.write(f"**Deuda:** {full['A']['debt_assessment']}")
+        with col_a2:
+            if full['A']['signals']:
+                st.write("**✅ Puntos Positivos:**")
+                for signal in full['A']['signals']:
+                    st.write(f"  • {signal}")
+            if full['A']['concerns']:
+                st.write("**⚠️ Preocupaciones:**")
+                for concern in full['A']['concerns']:
+                    st.write(f"  • {concern}")
         
-        if base_result['A']['signals']:
-            st.write("**✅ Señales positivas:**")
-            for signal in base_result['A']['signals']:
-                st.write(f"  • {signal}")
-        
-        if base_result['A']['concerns']:
-            st.write("**⚠️ Áreas de preocupación:**")
-            for concern in base_result['A']['concerns']:
-                st.write(f"  • {concern}")
-        
-        st.write("**❓ Preguntas pendientes (requieren revisión cualitativa):**")
-        for question in base_result['A']['questions']:
-            st.write(f"  • {question}")
+        st.write("**❓ Investigación Adicional:**")
+        for q in full['A']['questions']:
+            st.write(f"  • {q}")
     
+    # TAB S
     with tabs_base[2]:
-        st.write("**Análisis de salud financiera:**")
-        st.write("Evalúa ROE, márgenes estables, deuda manejable, flujo de caja positivo y consistencia de beneficios.")
+        st.subheader("S — Salud Financiera")
+        st.write("¿ROE consistente y alto? ¿Márgenes estables? ¿Flujo de caja real?")
         
-        st.write(f"**Puntaje: {base_result['S']['score']}/{base_result['S']['max_score']}**")
+        col_s1, col_s2 = st.columns([1, 2])
+        with col_s1:
+            st.metric("Puntaje", f"{full['S']['score']}/{full['S']['max_score']}")
+            st.write(f"**Calidad ROE:** {full['S']['roe_quality']}")
+            st.write(f"**Márgenes:** {full['S']['margin_trend']}")
+        with col_s2:
+            if full['S']['signals']:
+                st.write("**✅ Señales Saludables:**")
+                for signal in full['S']['signals']:
+                    st.write(f"  • {signal}")
+            if full['S']['concerns']:
+                st.write("**⚠️ Banderas Rojas:**")
+                for concern in full['S']['concerns']:
+                    st.write(f"  • {concern}")
         
-        if base_result['S']['signals']:
-            st.write("**✅ Señales positivas:**")
-            for signal in base_result['S']['signals']:
-                st.write(f"  • {signal}")
-        
-        if base_result['S']['concerns']:
-            st.write("**⚠️ Áreas de preocupación:**")
-            for concern in base_result['S']['concerns']:
-                st.write(f"  • {concern}")
-        
-        st.write("**❓ Preguntas pendientes (requieren revisión cualitativa):**")
-        for question in base_result['S']['questions']:
-            st.write(f"  • {question}")
+        st.write("**❓ Validar:**")
+        for q in full['S']['questions']:
+            st.write(f"  • {q}")
     
+    # TAB E
     with tabs_base[3]:
-        st.write("**Análisis de evaluación del precio:**")
-        st.write("Evalúa si el precio es atractivo basado en PER, rendimiento de ganancias, precio/libro y precio/ventas.")
+        st.subheader("E — Evaluación del Precio")
+        st.write("¿Es atractivo el precio actual? ¿Qué retorno esperado?")
         
-        st.write(f"**Puntaje: {base_result['E']['score']}/{base_result['E']['max_score']}**")
+        col_e1, col_e2 = st.columns(2)
+        with col_e1:
+            st.metric("Puntaje", f"{full['E']['score']}/{full['E']['max_score']}")
+            st.metric("Initial Yield", f"{full['E']['initial_yield']:.2%}" if full['E']['initial_yield'] else "N/D")
+            st.metric("PER Actual", f"{info.get('trailingPE', 'N/D'):.1f}x" if info.get('trailingPE') else "N/D")
+        with col_e2:
+            st.metric("Valoración", full['E']['valuation_level'])
+            st.metric("TIR Proyectada", f"{summary['tir_projected']:.1%}" if summary['tir_projected'] else "N/D")
+            st.metric("Precio Objetivo (15%)", f"${summary['target_price_15pct']:.2f}" if summary['target_price_15pct'] else "N/D")
         
-        if base_result['E']['signals']:
-            st.write("**✅ Señales positivas:**")
-            for signal in base_result['E']['signals']:
+        if full['E']['signals']:
+            st.write("**✅ Valoración Atractiva:**")
+            for signal in full['E']['signals']:
                 st.write(f"  • {signal}")
-        
-        if base_result['E']['concerns']:
-            st.write("**⚠️ Áreas de preocupación:**")
-            for concern in base_result['E']['concerns']:
+        if full['E']['concerns']:
+            st.write("**⚠️ Valoración Cara:**")
+            for concern in full['E']['concerns']:
                 st.write(f"  • {concern}")
+    
+    # TAB RESUMEN
+    with tabs_base[4]:
+        st.subheader("📈 Análisis Integral")
         
-        st.write("**❓ Preguntas pendientes (requieren revisión cualitativa):**")
-        for question in base_result['E']['questions']:
-            st.write(f"  • {question}")
+        percentage = summary['percentage']
+        if percentage >= 80:
+            st.success(f"### ✅ Muy Favorable ({percentage:.0f}%)\nEl activo muestra características de **Monopolio de Consumidor** con valuación atractiva y administración solida.")
+        elif percentage >= 60:
+            st.info(f"### ⭐ Favorable ({percentage:.0f}%)\nBuen negocio con algunas señales positivas. Requiere revisión cualitativa adicional.")
+        elif percentage >= 40:
+            st.warning(f"### ⚠️ Mixto ({percentage:.0f}%)\nCaracterísticas positivas y negativas. Investigación adicional **obligatoria** antes de invertir.")
+        else:
+            st.error(f"### ❌ Desfavorable ({percentage:.0f}%)\nMás preocupaciones que fortalezas. Considerar alternativas.")
+        
+        st.markdown("---")
+        st.write("**🎯 Conclusión de Análisis:**")
+        
+        conclusions = []
+        if summary['business_type'] == 'MONOPOLIO CONSUMIDOR':
+            conclusions.append(f"✅ Negocio de **calidad superior** con ventaja competitiva potencial")
+        if summary['tir_projected'] and summary['tir_projected'] > 0.15:
+            conclusions.append(f"✅ Retorno esperado **atractivo** (TIR {summary['tir_projected']:.1%})")
+        if summary['valuation_level'] == 'Barata':
+            conclusions.append(f"✅ Precio **actualmente atractivo** para comprar")
+        if summary['trend'] == 'Alcista':
+            conclusions.append(f"📈 Tendencia técnica **alcista**, favorable para entrada")
+        
+        if conclusions:
+            for c in conclusions:
+                st.write(f"  {c}")
+        else:
+            st.write("  • Revisar cuidadosamente antes de tomar decisión")
     
-    # Resumen final
+    # ADVERTENCIA LEGAL
     st.markdown("---")
-    st.write("**Interpretación del puntaje:**")
-    percentage = base_result['percentage']
-    if percentage >= 80:
-        st.success("**Muy favorable:** El activo muestra características positivas según el Método BASE.")
-    elif percentage >= 60:
-        st.info("**Favorable:** El activo tiene varias señales positivas, pero requiere revisión cualitativa.")
-    elif percentage >= 40:
-        st.warning("**Mixto:** El activo tiene características positivas y negativas. Requiere investigación adicional.")
-    else:
-        st.error("**Desfavorable:** El activo muestra más preocupaciones que señales positivas.")
-    
-    st.caption("⚠️ Este análisis es educativo y se basa en datos cuantitativos. No reemplaza la investigación cualitativa ni constituye una recomendación de inversión.")
+    st.caption("⚠️ **Aviso Legal:** Este análisis es puramente educativo y analítico, basado en metodologías de Buffettología y Método BASE. No constituye una recomendación formal de compra o venta de valores. El análisis depende de datos incompletos y supuestos simplificados. Consulte con un asesor financiero calificado antes de invertir.")
 
 with fundamentals:
     st.subheader("Métricas disponibles")
