@@ -7,8 +7,22 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 from base_engine_v2 import BuffettAnalyzer
 from stock_screener import BuffettScreener
+from gemini_analyzer import GeminiAnalyzer
 
 st.set_page_config(page_title="Radar Financiero Pro", page_icon="📊", layout="wide")
+
+# Inicializar Gemini AI para análisis profundo
+@st.cache_resource
+def init_gemini():
+    try:
+        api_key = st.secrets.get("GEMINI_API_KEY", "")
+        if api_key:
+            return GeminiAnalyzer(api_key)
+    except:
+        pass
+    return None
+
+gemini = init_gemini()
 
 st.markdown("""
 <style>
@@ -82,16 +96,26 @@ with st.sidebar:
     interval = st.selectbox("Intervalo", ["1d", "1wk", "1mo"], index=0)
     chart = st.selectbox("Gráfico", ["Velas", "Línea"], index=0)
     st.divider()
-    st.header("Supuestos de valoración")
-    st.caption("📋 Estos valores se usan para calcular si el precio actual permite lograr tu retorno objetivo")
-    growth = st.slider("Crecimiento EPS anual", -20, 40, 10) / 100
-    st.caption("Crecimiento esperado de ganancias por acción en los próximos 10 años")
-    terminal_pe = st.slider("PER final", 5, 50, 20)
-    st.caption("Múltiplo PER que esperas al final (ej: 20x significa 20 veces ganancias)")
-    years = st.slider("Horizonte", 3, 15, 10)
-    st.caption("Años que planeas mantener la acción")
-    target_return = st.slider("Rentabilidad objetivo", 5, 25, 15) / 100
-    st.caption("Retorno anual que deseas (15% es el estándar de Buffett)")
+    
+    # Supuestos de valoración en sección colapsable
+    with st.expander("📊 Supuestos de valoración (opcional)", expanded=False):
+        st.caption("Estos valores se usan para calcular si el precio actual permite lograr tu retorno objetivo")
+        growth = st.slider("Crecimiento EPS anual", -20, 40, 10) / 100
+        st.caption("Crecimiento esperado de ganancias por acción en los próximos 10 años")
+        terminal_pe = st.slider("PER final", 5, 50, 20)
+        st.caption("Múltiplo PER que esperas al final (ej: 20x significa 20 veces ganancias)")
+        years = st.slider("Horizonte", 3, 15, 10)
+        st.caption("Años que planeas mantener la acción")
+        target_return = st.slider("Rentabilidad objetivo", 5, 25, 15) / 100
+        st.caption("Retorno anual que deseas (15% es el estándar de Buffett)")
+    
+    # Valores por defecto si el expander está cerrado
+    if 'growth' not in st.session_state:
+        st.session_state.growth = 0.10
+        st.session_state.terminal_pe = 20
+        st.session_state.years = 10
+        st.session_state.target_return = 0.15
+    
     run = st.button("Analizar activo", type="primary", use_container_width=True)
 
 if run or "asset" not in st.session_state:
@@ -216,6 +240,22 @@ with base_analysis:
         st.write("**❓ Preguntas para Investigación Cualitativa:**")
         for q in full['B']['questions']:
             st.write(f"  • {q}")
+        
+        # Análisis profundo con Gemini
+        if gemini:
+            st.markdown("---")
+            with st.expander("🤖 Análisis profundo con IA (Gemini)", expanded=False):
+                try:
+                    with st.spinner("Analizando moat económico con IA..."):
+                        moat_analysis, moat_strength = gemini.analyze_business_moat(
+                            symbol, name, full['B']['business_type'], 
+                            analyzer.gross_margin or 0, analyzer.roe or 0
+                        )
+                        st.write(moat_analysis)
+                        if moat_strength != "N/A":
+                            st.success(f"**Clasificación de Foso:** {moat_strength}")
+                except Exception as e:
+                    st.warning(f"No se pudo generar análisis de IA: {str(e)[:100]}")
     
     # TAB A
     with tabs_base[1]:
@@ -240,6 +280,20 @@ with base_analysis:
         st.write("**❓ Investigación Adicional:**")
         for q in full['A']['questions']:
             st.write(f"  • {q}")
+        
+        # Análisis profundo con Gemini
+        if gemini:
+            st.markdown("---")
+            with st.expander("🤖 Análisis de Administración con IA (Gemini)", expanded=False):
+                try:
+                    with st.spinner("Analizando calidad de administración..."):
+                        mgmt_analysis = gemini.analyze_management_quality(
+                            symbol, name, analyzer.roe_on_retained or 0,
+                            analyzer.debt_to_equity or 0, analyzer.eps_growth_rate or 0
+                        )
+                        st.write(mgmt_analysis)
+                except Exception as e:
+                    st.warning(f"No se pudo generar análisis de IA: {str(e)[:100]}")
     
     # TAB S
     with tabs_base[2]:
@@ -264,6 +318,20 @@ with base_analysis:
         st.write("**❓ Validar:**")
         for q in full['S']['questions']:
             st.write(f"  • {q}")
+        
+        # Análisis profundo con Gemini
+        if gemini:
+            st.markdown("---")
+            with st.expander("🤖 Análisis de Resiliencia con IA (Gemini)", expanded=False):
+                try:
+                    with st.spinner("Analizando resiliencia del negocio..."):
+                        resilience = gemini.analyze_business_resilience(
+                            symbol, name, sector, analyzer.roe_consistency or 0,
+                            full['S']['margin_trend']
+                        )
+                        st.write(resilience)
+                except Exception as e:
+                    st.warning(f"No se pudo generar análisis de IA: {str(e)[:100]}")
     
     # TAB E
     with tabs_base[3]:
@@ -288,6 +356,20 @@ with base_analysis:
             st.write("**⚠️ Valoración Cara:**")
             for concern in full['E']['concerns']:
                 st.write(f"  • {concern}")
+        
+        # Análisis profundo con Gemini
+        if gemini:
+            st.markdown("---")
+            with st.expander("🤖 Análisis de Valuación con IA (Gemini)", expanded=False):
+                try:
+                    with st.spinner("Analizando valoración actual..."):
+                        valuation = gemini.analyze_valuation(
+                            symbol, name, current, info.get('trailingPE') or 0,
+                            full['E']['initial_yield'] or 0, summary['tir_projected'] or 0
+                        )
+                        st.write(valuation)
+                except Exception as e:
+                    st.warning(f"No se pudo generar análisis de IA: {str(e)[:100]}")
     
     # TAB RESUMEN
     with tabs_base[4]:
@@ -372,73 +454,131 @@ with valuation:
 
 with opportunities:
     st.subheader("🎯 Oportunidades de Inversión - Screening Buffett")
-    st.caption("Análisis de acciones que cumplen criterios de calidad: Monopolio de Consumidor, ROE elevado, Deuda baja, Valuación atractiva")
-    
-    # Mensaje de inicio
-    st.info("🔍 Analizando acciones de calidad según la filosofía de Buffett. Esto puede tomar 30-60 segundos...")
-    
-    progress_placeholder = st.empty()
-    results_placeholder = st.empty()
+    st.caption("Acciones que cumplen criterios de calidad. Clasificadas por perfil de riesgo: Conservador, Moderado, Agresivo")
     
     try:
         # Ejecutar screening
         screener = BuffettScreener()
-        opportunities_list = screener.get_top_opportunities(num=15)
+        opportunities_list = screener.get_top_opportunities(num=20)
         
         if not opportunities_list:
             st.warning("No se encontraron acciones que cumplan los criterios de calidad en este momento.")
         else:
+            # Agregar análisis con Gemini (riesgo y descripción)
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            enhanced_opps = []
+            for idx, opp in enumerate(opportunities_list):
+                progress_bar.progress(min((idx + 1) / len(opportunities_list), 1.0))
+                status_text.text(f"Analizando {opp['symbol']} ({idx+1}/{len(opportunities_list)})...")
+                
+                # Mantener datos originales
+                opp_copy = opp.copy()
+                
+                # Agregar análisis con Gemini si está disponible
+                if gemini:
+                    try:
+                        # Clasificar riesgo
+                        risk_profile = gemini.classify_risk_profile(
+                            opp_copy['symbol'], opp_copy['symbol'], 
+                            opp_copy.get('roe', 0), opp_copy.get('debt_equity', 0),
+                            opp_copy.get('per', 0), opp_copy['sector']
+                        )
+                        opp_copy['risk_profile'] = risk_profile
+                        
+                        # Obtener descripción de empresa
+                        company_desc = gemini.get_company_description(
+                            opp_copy['symbol'], opp_copy['sector']
+                        )
+                        opp_copy['company_description'] = company_desc
+                    except:
+                        opp_copy['risk_profile'] = 'Moderado'
+                        opp_copy['company_description'] = 'Empresa de calidad según criterios cuantitativos.'
+                else:
+                    opp_copy['risk_profile'] = 'Moderado'
+                    opp_copy['company_description'] = 'Empresa de calidad según criterios cuantitativos.'
+                
+                enhanced_opps.append(opp_copy)
+            
+            progress_bar.empty()
+            status_text.empty()
+            
             # Mostrar resultados
-            st.success(f"✅ Se encontraron {len(opportunities_list)} oportunidades de inversión")
+            st.success(f"✅ Se encontraron {len(enhanced_opps)} oportunidades de inversión")
             st.markdown("---")
             
-            # Tabla de oportunidades
-            st.subheader("Top Oportunidades")
+            # Agrupar por riesgo
+            conservative = [o for o in enhanced_opps if 'Conservador' in o.get('risk_profile', 'Moderado')]
+            moderate = [o for o in enhanced_opps if 'Moderado' in o.get('risk_profile', 'Moderado')]
+            aggressive = [o for o in enhanced_opps if 'Agresivo' in o.get('risk_profile', 'Moderado')]
             
-            for idx, opp in enumerate(opportunities_list[:10], 1):
-                col1, col2, col3, col4 = st.columns([1, 2, 2, 2])
-                
-                with col1:
-                    st.metric(f"#{idx}", opp['symbol'], opp['score'])
-                
-                with col2:
-                    st.write(f"**Sector:** {opp['sector']}")
-                    st.write(f"**Precio:** {opp['price']}")
-                
-                with col3:
-                    st.write(f"**Tipo:** {opp['business_type']}")
-                    st.write(f"**Foso:** {opp['moat']}")
-                
-                with col4:
-                    st.write("**Por qué es recomendable:**")
-                    for reason in opp['reasons']:
-                        st.write(f"  {reason}")
-                
-                st.markdown("---")
+            # Mostrar por categoría
+            tabs_risk = st.tabs([
+                f"🛡️ Conservador ({len(conservative)})", 
+                f"⚖️ Moderado ({len(moderate)})", 
+                f"🚀 Agresivo ({len(aggressive)})"
+            ])
             
-            # Tabla consolidada (opcional)
-            st.subheader("Tabla Resumida")
+            for tab_idx, (risk_list, risk_name) in enumerate([
+                (conservative, "conservador"),
+                (moderate, "moderado"),
+                (aggressive, "agresivo")
+            ]):
+                with tabs_risk[tab_idx]:
+                    if not risk_list:
+                        st.info(f"No hay oportunidades con perfil {risk_name} en este momento.")
+                    else:
+                        for idx, opp in enumerate(risk_list[:5], 1):  # Top 5 por categoría
+                            with st.expander(f"{idx}. {opp['symbol']} - ${opp['price']:.2f} - Puntaje {opp['score']:.0f}%"):
+                                col1, col2 = st.columns([2, 1])
+                                
+                                with col1:
+                                    st.write("**¿Qué hace esta empresa?**")
+                                    st.write(opp.get('company_description', 'Empresa de inversión de calidad.'))
+                                
+                                with col2:
+                                    st.metric("Puntaje", f"{opp['score']:.0f}%")
+                                    st.metric("Precio", f"${opp['price']:.2f}")
+                                    st.metric("Riesgo", opp.get('risk_profile', 'Moderado'))
+                                
+                                st.write("**Sector & Tipo:**")
+                                col_s, col_t = st.columns(2)
+                                col_s.write(f"• Sector: {opp['sector']}")
+                                col_t.write(f"• Tipo: {opp['business_type']}")
+                                
+                                st.write("**Foso Económico:**")
+                                st.write(f"• {opp['moat']}")
+                                
+                                st.write("**Por qué es recomendable:**")
+                                for reason in opp['reasons'][:5]:  # Top 5 razones
+                                    st.write(f"  • {reason}")
+                                
+                                st.markdown("---")
+            
+            # Tabla consolidada
+            st.subheader("Tabla Completa de Oportunidades")
             
             table_data = []
-            for opp in opportunities_list[:10]:
+            for opp in enhanced_opps[:10]:
                 table_data.append({
                     'Símbolo': opp['symbol'],
-                    'Puntaje': opp['score'],
-                    'Precio': opp['price'],
+                    'Puntaje': f"{opp['score']:.0f}%",
+                    'Precio': f"${opp['price']:.2f}",
                     'Sector': opp['sector'],
-                    'Tipo de Negocio': opp['business_type'],
+                    'Riesgo': opp.get('risk_profile', 'Moderado'),
                     'Foso': opp['moat']
                 })
             
-            df_opportunities = pd.DataFrame(table_data)
-            st.dataframe(df_opportunities, use_container_width=True, hide_index=True)
+            df_opps = pd.DataFrame(table_data)
+            st.dataframe(df_opps, use_container_width=True, hide_index=True)
             
             st.markdown("---")
-            st.caption("💡 **Nota:** Estas son oportunidades identificadas por criterios cuantitativos. Realiza investigación cualitativa adicional, revisa informes anuales y noticias antes de invertir. Consulta con un asesor financiero calificado.")
+            st.caption("💡 **Nota:** Estas son oportunidades identificadas por criterios cuantitativos y análisis con IA. Realiza tu propia investigación cualitativa, revisa informes anuales, noticias y tendencias del sector. Consulta con un asesor financiero antes de invertir.")
     
     except Exception as e:
-        st.error(f"Error al ejecutar screening: {str(e)}")
-        st.caption("Intenta de nuevo en unos momentos o revisa la conexión a internet.")
+        st.error(f"Error al ejecutar screening: {str(e)[:150]}")
+        st.caption("Intenta de nuevo en unos momentos o revisa tu conexión a internet.")
 
 st.divider()
 st.caption("⚠️ **Aviso Legal:** Este análisis es puramente educativo y analítico. No constituye una recomendación formal de compra o venta de valores. Los datos gratuitos pueden estar retrasados, incompletos o contener errores. Consulte con un asesor financiero calificado antes de invertir.")

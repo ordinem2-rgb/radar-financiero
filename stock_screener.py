@@ -11,7 +11,8 @@ from base_engine_v2 import BuffettAnalyzer, is_valid
 class ScreenedStock:
     """Representa una acción que ha pasado el screening"""
     def __init__(self, symbol: str, score: float, max_score: float, reasons: List[str], 
-                 price: float, sector: str, business_type: str, moat: str):
+                 price: float, sector: str, business_type: str, moat: str, 
+                 risk_profile: str = "Moderado", company_description: str = ""):
         self.symbol = symbol
         self.score = score
         self.max_score = max_score
@@ -21,6 +22,8 @@ class ScreenedStock:
         self.sector = sector
         self.business_type = business_type
         self.moat = moat
+        self.risk_profile = risk_profile  # Conservador, Moderado, Agresivo
+        self.company_description = company_description  # Descripción de qué hace
     
     def __lt__(self, other):
         """Permite ordenar por score descendente"""
@@ -35,28 +38,28 @@ class BuffettScreener:
     # Lista curada de acciones estadounidenses de calidad (sector diverso)
     QUALITY_CANDIDATES = [
         # Consumo Masivo - Monopolios clásicos Buffett
-        'KO', 'PEP', 'MDLZ', 'CL', 'PG', 'GIS',
+        'KO', 'PEP', 'MDLZ', 'CL', 'PG', 'GIS', 'MO', 'KMB', 'EL',
         
-        # Financiero
-        'V', 'MA', 'AXP', 'JPM', 'BAC', 'USB',
+        # Financiero & Pagos
+        'V', 'MA', 'AXP', 'JPM', 'BAC', 'USB', 'WFC', 'BLK', 'SCHW',
         
         # Healthcare/Pharma
-        'JNJ', 'UNH', 'PFE', 'ABBV', 'MRK', 'LLY',
+        'JNJ', 'UNH', 'PFE', 'ABBV', 'MRK', 'LLY', 'BPOB', 'TMO', 'ILMN',
         
-        # Tech (cuidadoso, pero con moat)
-        'AAPL', 'MSFT', 'GOOG', 'META', 'CRM',
+        # Tech (con moat duradero)
+        'AAPL', 'MSFT', 'GOOG', 'CRM', 'ADBE', 'INTU', 'PAYC',
         
         # Utilities & Defensivos
-        'NEE', 'SO', 'DUK', 'EXC', 'XEL',
+        'NEE', 'SO', 'DUK', 'EXC', 'XEL', 'ED', 'AEP',
         
         # Industrial/Fabricación
-        'BA', 'GE', 'CAT', 'DE', 'PLD',
+        'BA', 'GE', 'CAT', 'DE', 'ABB', 'EMR', 'ITW',
         
         # Retail/Distribución
-        'AMZN', 'HD', 'LOW', 'KR', 'TJX',
+        'AMZN', 'HD', 'LOW', 'KR', 'TJX', 'WMT', 'MCD', 'SBUX',
         
-        # Otros
-        'BRK.B', 'WMT', 'COST', 'MCD', 'NKE'
+        # Diversificadas
+        'BRK.B', 'COST', 'NFLX', 'NKE', 'YUM', 'KKR', 'PLD'
     ]
     
     def __init__(self):
@@ -202,7 +205,9 @@ class BuffettScreener:
                 price=analyzer.current_price or 0,
                 sector=analyzer.sector or "N/D",
                 business_type=full['B']['business_type'],
-                moat=full['B']['moat_strength']
+                moat=full['B']['moat_strength'],
+                risk_profile="Moderado",  # Se asignará en radar_financiero con Gemini
+                company_description=""  # Se asignará en radar_financiero con Gemini
             )
             
             return True, screened, None
