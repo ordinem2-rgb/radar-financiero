@@ -52,7 +52,14 @@ class BASEAnalyzer:
         self.operating_cf = safe_get(self.info, 'operatingCashflow')
         self.revenue = safe_get(self.info, 'totalRevenue')
         self.net_income = safe_get(self.info, 'netIncome')
-        self.equity = safe_get(self.info, 'totalAssets') - safe_get(self.info, 'totalLiabilities', 0)
+        
+        # Calcular equity de forma segura
+        assets = safe_get(self.info, 'totalAssets')
+        liabilities = safe_get(self.info, 'totalLiabilities')
+        if is_valid(assets) and is_valid(liabilities):
+            self.equity = assets - liabilities
+        else:
+            self.equity = None
         
     def get_historical_eps(self) -> Dict[int, float]:
         """Extrae EPS histórico del estado de resultados."""
