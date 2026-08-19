@@ -250,12 +250,14 @@ class BuffettScreener:
         for stock in screened[:num]:
             opportunity = {
                 'symbol': stock.symbol,
-                'score': f"{stock.percentage:.0f}%",
-                'price': f"${stock.price:.2f}" if stock.price > 0 else "N/D",
+                'score': stock.percentage,
+                'price': stock.price,
                 'sector': stock.sector,
                 'business_type': stock.business_type,
                 'moat': stock.moat,
-                'reasons': stock.reasons
+                'reasons': stock.reasons,
+                'risk_profile': stock.risk_profile,
+                'company_description': stock.company_description
             }
             opportunities.append(opportunity)
         

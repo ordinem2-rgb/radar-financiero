@@ -7,18 +7,24 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 from base_engine_v2 import BuffettAnalyzer
 from stock_screener import BuffettScreener
-from gemini_analyzer import GeminiAnalyzer
+
+try:
+    from gemini_analyzer import GeminiAnalyzer
+except ImportError:
+    GeminiAnalyzer = None
 
 st.set_page_config(page_title="Radar Financiero Pro", page_icon="📊", layout="wide")
 
 # Inicializar Gemini AI para análisis profundo
 @st.cache_resource
 def init_gemini():
+    if GeminiAnalyzer is None:
+        return None
     try:
         api_key = st.secrets.get("GEMINI_API_KEY", "")
         if api_key:
             return GeminiAnalyzer(api_key)
-    except:
+    except Exception:
         pass
     return None
 
