@@ -369,11 +369,11 @@ with base_analysis:
             with st.expander("🤖 Análisis de Valuación con IA (Gemini)", expanded=False):
                 try:
                     with st.spinner("Analizando valoración actual..."):
-                        valuation = gemini.analyze_valuation(
+                        valuation_analysis = gemini.analyze_valuation(
                             symbol, name, current, info.get('trailingPE') or 0,
                             full['E']['initial_yield'] or 0, summary['tir_projected'] or 0
                         )
-                        st.write(valuation)
+                        st.write(valuation_analysis)
                 except Exception as e:
                     st.warning(f"No se pudo generar análisis de IA: {str(e)[:100]}")
     

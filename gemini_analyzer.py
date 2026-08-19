@@ -17,7 +17,28 @@ class GeminiAnalyzer:
     def __init__(self, api_key: str):
         """Inicializa con API key de Google Gemini"""
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = None
+        for candidate in [
+            'gemini-2.0-flash',
+            'gemini-1.5-flash',
+            'gemini-1.5-flash-latest',
+            'gemini-1.5-pro',
+            'gemini-1.5-pro-latest'
+        ]:
+            try:
+                self.model = genai.GenerativeModel(candidate)
+                break
+            except Exception:
+                continue
+
+    def _safe_generate(self, prompt: str) -> str:
+        if self.model is None:
+            return "Gemini no está disponible en este momento. Verifica la clave y la versión del modelo."
+        try:
+            response = self.model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            return f"Error en análisis: {str(e)}"
     
     def analyze_business_moat(self, symbol: str, company_name: str, business_type: str, 
                              margins: float, roe: float) -> Tuple[str, str]:
@@ -41,21 +62,19 @@ class GeminiAnalyzer:
         Sé específico y basado en hechos conocidos sobre {company_name}. 
         Usa lenguaje directo, no académico.
         """
-        
-        try:
-            response = self.model.generate_content(prompt)
-            moat_analysis = response.text
-            
-            # Clasificación del foso
-            moat_strength = "Fuerte"
-            if "débil" in moat_analysis.lower() or "riesgo" in moat_analysis.lower():
-                moat_strength = "Moderado"
-            if "commodity" in moat_analysis.lower() or "fácil" in moat_analysis.lower():
-                moat_strength = "Débil"
-            
-            return moat_analysis, moat_strength
-        except Exception as e:
-            return f"Error en análisis: {str(e)}", "N/A"
+
+        moat_analysis = self._safe_generate(prompt)
+
+        # Clasificación del foso
+        moat_strength = "Fuerte"
+        if "error" in moat_analysis.lower() or "no está disponible" in moat_analysis.lower():
+            return moat_analysis, "N/A"
+        if "débil" in moat_analysis.lower() or "riesgo" in moat_analysis.lower():
+            moat_strength = "Moderado"
+        if "commodity" in moat_analysis.lower() or "fácil" in moat_analysis.lower():
+            moat_strength = "Débil"
+
+        return moat_analysis, moat_strength
     
     def analyze_management_quality(self, symbol: str, company_name: str, roe_retained: float,
                                    debt_equity: float, eps_growth: float) -> str:
@@ -79,11 +98,7 @@ class GeminiAnalyzer:
         Sé específico. Lenguaje directo, no académico.
         """
         
-        try:
-            response = self.model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            return f"Error en análisis: {str(e)}"
+        return self._safe_generate(prompt)
     
     def analyze_business_resilience(self, symbol: str, company_name: str, sector: str,
                                    roe_consistency: float, margin_trend: str) -> str:
@@ -107,11 +122,7 @@ class GeminiAnalyzer:
         Sé específico. Lenguaje directo.
         """
         
-        try:
-            response = self.model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            return f"Error en análisis: {str(e)}"
+        return self._safe_generate(prompt)
     
     def analyze_valuation(self, symbol: str, company_name: str, current_price: float,
                          per: float, initial_yield: float, tir: float) -> str:
@@ -136,11 +147,7 @@ class GeminiAnalyzer:
         Sé específico sobre números. Lenguaje directo.
         """
         
-        try:
-            response = self.model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            return f"Error en análisis: {str(e)}"
+        return self._safe_generate(prompt)
     
     def get_company_description(self, company_name: str, sector: str) -> str:
         """
@@ -160,11 +167,7 @@ class GeminiAnalyzer:
         Sé conciso y claro. Para inversores, no para académicos.
         """
         
-        try:
-            response = self.model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            return f"Error: {str(e)}"
+        return self._safe_generate(prompt)
     
     def classify_risk_profile(self, symbol: str, company_name: str, roe: float, 
                             debt_equity: float, per: float, sector: str) -> str:
@@ -188,15 +191,15 @@ class GeminiAnalyzer:
         """
         
         try:
-            response = self.model.generate_content(prompt)
-            classification = response.text.strip().split('\n')[0]
-            
-            # Normalizar respuesta
+            text = self._safe_generate(prompt)
+            if "error" in text.lower() or "no está disponible" in text.lower():
+                return "Moderado"
+            classification = text.strip().split('\n')[0]
             if "CONSERVADOR" in classification.upper():
                 return "Conservador"
             elif "AGRESIVO" in classification.upper():
                 return "Agresivo"
             else:
                 return "Moderado"
-        except Exception as e:
-            return "Moderado"  # Default
+        except Exception:
+            return "Moderado"
