@@ -461,16 +461,38 @@ with valuation:
 with opportunities:
     st.subheader("🎯 Oportunidades de Inversión - Screening Buffett")
     st.caption("Acciones que cumplen criterios de calidad. Clasificadas por perfil de riesgo: Conservador, Moderado, Agresivo")
-    
-    try:
-        # Ejecutar screening
-        screener = BuffettScreener()
-        opportunities_list = screener.get_top_opportunities(num=20)
-        
-        if not opportunities_list:
-            st.warning("No se encontraron acciones que cumplan los criterios de calidad en este momento.")
-        else:
-            # Agregar análisis con Gemini (riesgo y descripción)
+
+    if "opportunities_list" not in st.session_state:
+        st.session_state.opportunities_list = None
+
+    if st.button("🔍 Buscar oportunidades", type="primary", use_container_width=True):
+        try:
+            screener = BuffettScreener()
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+
+            def update_screening_progress(message):
+                status_text.write(message)
+
+            opportunities_list = screener.get_top_opportunities(
+                num=20,
+                progress_callback=update_screening_progress
+            )
+            st.session_state.opportunities_list = opportunities_list
+            progress_bar.progress(1.0)
+            status_text.empty()
+        except Exception as e:
+            st.session_state.opportunities_list = []
+            st.error(f"No se pudo completar la búsqueda: {str(e)[:150]}")
+
+    opportunities_list = st.session_state.opportunities_list
+
+    if opportunities_list is None:
+        st.info("Pulsa el botón para analizar empresas. La primera búsqueda puede tardar unos minutos.")
+    elif not opportunities_list:
+        st.warning("No se encontraron acciones que cumplan los criterios de calidad en este momento.")
+    else:
+        # Agregar análisis con Gemini (riesgo y descripción)
             progress_bar = st.progress(0)
             status_text = st.empty()
             
@@ -581,10 +603,6 @@ with opportunities:
             
             st.markdown("---")
             st.caption("💡 **Nota:** Estas son oportunidades identificadas por criterios cuantitativos y análisis con IA. Realiza tu propia investigación cualitativa, revisa informes anuales, noticias y tendencias del sector. Consulta con un asesor financiero antes de invertir.")
-    
-    except Exception as e:
-        st.error(f"Error al ejecutar screening: {str(e)[:150]}")
-        st.caption("Intenta de nuevo en unos momentos o revisa tu conexión a internet.")
 
 st.divider()
 st.caption("⚠️ **Aviso Legal:** Este análisis es puramente educativo y analítico. No constituye una recomendación formal de compra o venta de valores. Los datos gratuitos pueden estar retrasados, incompletos o contener errores. Consulte con un asesor financiero calificado antes de invertir.")
